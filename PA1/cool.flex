@@ -42,7 +42,31 @@ extern YYSTYPE cool_yylval;
 /*
  *  Add Your own definitions here
  */
+int too_long = 0;
+int null_character = 0;
+int comment_depth = 0;
 
+void start_string() {
+	too_long = 0;
+	null_character = 0;
+	string_buf_ptr = string_buf;
+}
+
+void add_char(char ch) {
+	if (string_buf_ptr-string_buf < MAX_STR_CONST-1)
+		*string_buf_ptr++ = ch;
+	else
+		too_long = 1;
+	if (ch == 0)
+		null_character = 1;
+}
+
+void end_string() {
+	if (string_buf_ptr-string_buf <= MAX_STR_CONST-1)
+		*string_buf_ptr = 0;
+	else
+		too_long = 1;
+}
 %}
 
 /*
@@ -50,51 +74,128 @@ extern YYSTYPE cool_yylval;
  */
 
 DARROW          =>
+ASSIGN			<-
+LE				<=
 DIGIT			[0-9]
 LETTER			[a-zA-Z]
 SPACE			[ \n\f\r\t\v]
+IDENTIFIER		{LETTER}|{DIGIT}|_
+
+%Start COMMENT STRING
 
 %%
 
-{SPACE}+	;
+
+<INITIAL>{SPACE}+	;
+
 
  /*
   *  Nested comments
   */
+\(\*	{ BEGIN(COMMENT); comment_depth++; }
+<INITIAL>\*\)	{
+	cool_yylval.error_msg = "Unmatched *)";
+	return ERROR;
+}
+<COMMENT>\*\)	{
+	comment_depth--;
+	if (comment_depth == 0)
+		BEGIN 0;
+}
+<COMMENT><<EOF>> {
+	BEGIN 0;
+	cool_yylval.error_msg = "EOF in comment";
+	return ERROR;
+}
+<COMMENT>.
 
+<INITIAL>\" 	{
+	BEGIN(STRING);
+	start_string();
+}
+<STRING>\\\n	{ add_char('\n'); }
+<STRING>\\\t	{ add_char('\t'); }
+<STRING>\\\b	{ add_char('\b'); }
+<STRING>\\\f	{ add_char('\f'); }
+<STRING>\\.		{ add_char(yytext[0]); }
+<STRING>\n		{
+	BEGIN 0;
+	cool_yylval.error_msg = "Unterminated string constant"; 
+	return ERROR;
+}
+<STRING>[^"]	{ add_char(yytext[0]); }
+<STRING>\"		{
+	BEGIN 0;
+	end_string();
+	if (too_long) {
+		cool_yylval.error_msg = "String constant tool long";	
+		return ERROR;
+	} else if (null_character) {
+		cool_yylval.error_msg = "String contains null character";
+		return ERROR;
+	}
+	cool_yylval.symbol = stringtable.add_string(string_buf);
+	return STR_CONST;
+}
+<STRING><<EOF>> {
+	BEGIN 0;
+	cool_yylval.error_msg = "EOF in string constant";
+	return ERROR;
+}
+
+
+ /*
+  * Single characters
+  */
+<INITIAL>\+				{ return '+'; }
+<INITIAL>\-				{ return '-'; }
+<INITIAL>\*				{ return '*'; }
+<INITIAL>\/				{ return '/'; }
+<INITIAL>\<				{ return '<'; }
+<INITIAL>\;				{ return ';'; }
+<INITIAL>\,				{ return ','; }
+<INITIAL>\:				{ return ':'; }
+<INITIAL>\.				{ return '.'; }
+<INITIAL>\~				{ return '~'; }
+<INITIAL>\=				{ return '='; }
+<INITIAL>\(				{ return '('; }
+<INITIAL>\)				{ return ')'; }
 
  /*
   *  The multiple-character operators.
   */
-{DARROW}		{ return (DARROW); }
+<INITIAL>{DARROW}		{ return DARROW; }
+<INITIAL>{ASSIGN}		{ return ASSIGN; }
+<INITIAL>{LE}			{ return LE; }
 
  /*
   * Keywords are case-insensitive except for the values true and false,
   * which must begin with a lower-case letter.
   */
-[cC][lL][aA][sS][sS]	{ return CLASS; }
-[eE][lL][sS][eE]		{ return ELSE; }
-[fF][iI]				{ return FI; }
-[iI][fF]				{ return IF; }
-[iI][nN]				{ return IN; }
-[iI][nN][hH][eE][rR][iI][tT][sS]	{ return INHERITS; }
-[lL][eE][tT]			{ return LET; }
-[lL][oO][oO][pP]		{ return LOOP; }
-[pP][oO][oO][lL]		{ return POOL; }
-[tT][hH][eE][nN]		{ return THEN; }
-[wW][hH][iI][lL][eE]	{ return WHILE; }
-[cC][aA][sS][eE]		{ return CASE; }
-[eE][sS][aA][cC]		{ return ESAC; }
-[oO][fF]				{ return OF; }
-[nN][eE][wW]			{ return NEW; }
-[iI][sS][vV][oO][iI][dD]			{ return ISVOID; }
-(true|false)					{ puts(yytext); }
+<INITIAL>[cC][lL][aA][sS][sS]	{ return CLASS; }
+<INITIAL>[eE][lL][sS][eE]		{ return ELSE; }
+<INITIAL>[fF][iI]				{ return FI; }
+<INITIAL>[iI][fF]				{ return IF; }
+<INITIAL>[iI][nN]				{ return IN; }
+<INITIAL>[iI][nN][hH][eE][rR][iI][tT][sS]	{ return INHERITS; }
+<INITIAL>[lL][eE][tT]			{ return LET; }
+<INITIAL>[lL][oO][oO][pP]		{ return LOOP; }
+<INITIAL>[pP][oO][oO][lL]		{ return POOL; }
+<INITIAL>[tT][hH][eE][nN]		{ return THEN; }
+<INITIAL>[wW][hH][iI][lL][eE]	{ return WHILE; }
+<INITIAL>[cC][aA][sS][eE]		{ return CASE; }
+<INITIAL>[eE][sS][aA][cC]		{ return ESAC; }
+<INITIAL>[oO][fF]				{ return OF; }
+<INITIAL>[nN][eE][wW]			{ return NEW; }
+<INITIAL>[nN][oO][tT]			{ return NOT; }
+<INITIAL>[iI][sS][vV][oO][iI][dD]			{ return ISVOID; }
+<INITIAL>t[rR][uU][eE]			{ cool_yylval.boolean = 1; return BOOL_CONST; }
+<INITIAL>f[aA][lL][sS][eE]		{ cool_yylval.boolean = 0; return BOOL_CONST; }
+<INITIAL>{DIGIT}+				{ cool_yylval.symbol = inttable.add_string(yytext); return INT_CONST; }
+<INITIAL>[A-Z]{IDENTIFIER}*		{ cool_yylval.symbol = idtable.add_string(yytext); return TYPEID; }
+<INITIAL>[a-z]{IDENTIFIER}*		{ cool_yylval.symbol = idtable.add_string(yytext); return OBJECTID; }
 
- /*
-  *  String constants (C syntax)
-  *  Escape sequence \c is accepted for all characters c. Except for 
-  *  \n \t \b \f, the result is c.
-  *
-  */
+
+<INITIAL>.	{ cool_yylval.error_msg = yytext; return ERROR; }
 
 %%
