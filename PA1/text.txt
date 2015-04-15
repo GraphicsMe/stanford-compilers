@@ -1,7 +1,0 @@
-hello world
-12 34
-goodbye the world
-class
-CLASS
-true
-false

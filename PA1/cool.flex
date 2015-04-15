@@ -67,6 +67,16 @@ void end_string() {
 	else
 		too_long = 1;
 }
+
+void inc_line() {
+	++curr_lineno;
+}
+void count_line() {
+	char* ptr;
+	for (ptr = yytext; *ptr != 0; ++ptr)
+		if (*ptr == '\n')
+			++curr_lineno;
+}
 %}
 
 /*
@@ -81,18 +91,18 @@ LETTER			[a-zA-Z]
 SPACE			[ \n\f\r\t\v]
 IDENTIFIER		{LETTER}|{DIGIT}|_
 
-%Start COMMENT STRING
+%Start STRING COMMENT DASH_COMMENT
 
 %%
 
 
-<INITIAL>{SPACE}+	;
+<INITIAL>{SPACE}+		{ count_line(); }
 
 
  /*
   *  Nested comments
   */
-\(\*	{ BEGIN(COMMENT); comment_depth++; }
+<INITIAL,COMMENT>\(\*	{ BEGIN(COMMENT); comment_depth++; }
 <INITIAL>\*\)	{
 	cool_yylval.error_msg = "Unmatched *)";
 	return ERROR;
@@ -107,19 +117,26 @@ IDENTIFIER		{LETTER}|{DIGIT}|_
 	cool_yylval.error_msg = "EOF in comment";
 	return ERROR;
 }
-<COMMENT>.
+<COMMENT>.|\n	{ count_line(); }
+
+<INITIAL>\-\-			{ BEGIN(DASH_COMMENT); }
+<DASH_COMMENT>[^\n]		{ }
+<DASH_COMMENT>\n		{ BEGIN 0; count_line(); }
+<DASH_COMMENT><<EOF>>	{ BEGIN 0; }
 
 <INITIAL>\" 	{
 	BEGIN(STRING);
 	start_string();
 }
-<STRING>\\\n	{ add_char('\n'); }
-<STRING>\\\t	{ add_char('\t'); }
-<STRING>\\\b	{ add_char('\b'); }
-<STRING>\\\f	{ add_char('\f'); }
-<STRING>\\.		{ add_char(yytext[0]); }
+<STRING>\\n		{ add_char('\n'); }
+<STRING>\\t		{ add_char('\t'); }
+<STRING>\\b		{ add_char('\b'); }
+<STRING>\\f		{ add_char('\f'); }
+<STRING>\\\n	{ add_char('\n'); count_line(); }
+<STRING>\\.		{ add_char(yytext[1]); }
 <STRING>\n		{
 	BEGIN 0;
+	count_line();
 	cool_yylval.error_msg = "Unterminated string constant"; 
 	return ERROR;
 }
@@ -160,6 +177,9 @@ IDENTIFIER		{LETTER}|{DIGIT}|_
 <INITIAL>\=				{ return '='; }
 <INITIAL>\(				{ return '('; }
 <INITIAL>\)				{ return ')'; }
+<INITIAL>\{				{ return '{'; }
+<INITIAL>\}				{ return '}'; }
+<INITIAL>\@				{ return '@'; }
 
  /*
   *  The multiple-character operators.
